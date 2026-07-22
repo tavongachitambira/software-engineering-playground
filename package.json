@@ -7,7 +7,9 @@
     "dev": "turbo dev",
     "lint": "turbo lint",
     "format": "turbo format",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck", 
+    "new-topic": "node scripts/new-topic.mjs",
+  "topics:index": "node scripts/generate-index.mjs"
   },
   "devDependencies": {
     "@workspace/eslint-config": "workspace:*",
