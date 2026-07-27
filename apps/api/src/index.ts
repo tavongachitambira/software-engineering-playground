@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 
-const app = Fastify({ logger: true });
+const app = Fastify({ logger: false });
 
 app.get('/health', async () => ({ status: 'ok' }));
 
