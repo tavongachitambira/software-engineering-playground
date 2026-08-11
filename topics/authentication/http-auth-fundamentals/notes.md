@@ -1,129 +1,183 @@
 # HTTP & Token Auth Fundamentals — Notes
 
-Messy working notes. Clean version goes in README.md once I've built the example.
 
-## 1. Basic Auth
+### WHAT PROBLEM THIS SOLVES
+In early web systems, applications needed a standardized way to restrict access to resources without forcing developers to invent custom, non-interoperable login forms and authentication systems. State-tracking authentication mechanisms solve this by keeping a record of the user's logged-in status on the server so they do not have to authenticate on every request. However, stateful sessions introduce a massive scaling bottleneck, prompting stateless protocol methods that let clients securely present credentials with every request without taxing the server’s database with constant state lookups.
 
-**What happens:**
-- Client sends `Authorization: Basic base64(username:password)` header.
-- This is sent on **every single request** — there is no session, no state kept anywhere.
-- Server decodes the header, checks credentials against DB on every request.
-- If valid → request proceeds. If invalid → 401, back to signin.
+### THE CORE MECHANISM
 
-**Key correction to my original understanding:** it's NOT a cookie. No cookie is ever set. The raw credentials (base64-encoded, not encrypted) go out on the wire with every single call.
+#### 1. Basic Authentication
 
-**Why it's dead in production:**
-- Base64 is *encoding*, not encryption — trivially reversible (`atob()` in any browser console).
-- Only survives if wrapped entirely in TLS, and even then, sending raw credentials repeatedly is bad practice.
-- No concept of expiration, revocation, or scoping.
+* Sequence of Steps:
 
-**When it's still fine:** internal tooling, quick scripts, service-to-service calls over trusted networks where nothing better is set up yet.
+  1. Client sends a request to a protected resource without authorization.
 
----
+  2. Server responds with a 401 Unauthorized status and challenges the client.
 
-## 2. Digest Auth
+     * Header: `WWW-Authenticate: Basic realm="<realm_name>"`
 
-**What happens (challenge-response, not just "hash the cookie"):**
-1. Client requests a protected resource.
-2. Server responds `401` with a `WWW-Authenticate: Digest` header containing a **nonce** (random one-time value).
-3. Client computes `hash(username:realm:password:nonce:...)` — traditionally MD5 — and sends *that hash*, never the raw password.
-4. Server does the same computation on its end (since it also knows the password) and compares.
+  3. Client prompts the user for credentials, joins them as `username:password`, encodes the string in Base64, and resends the request.
 
-**Why it existed:** avoids sending the plaintext password over the wire even without TLS — an improvement over Basic auth in a pre-HTTPS-everywhere world.
+     * Header: `Authorization: Basic <base64_encoded_string>`
 
-**Why nobody uses it now:**
-- MD5 is cryptographically weak.
-- TLS is ubiquitous now, which solves the "credentials on the wire" problem more thoroughly anyway.
-- Considered legacy / rarely seen in modern APIs.
+  4. Server decodes the Base64 string, validates the credentials against its store, and grants access if valid.
 
----
+#### 2. HTTP Digest Authentication (RFC 7616)
 
-## 3. API Key Auth
+* Sequence of Steps:
 
-**What happens:**
-- Server generates a unique key per user/app at signup or app-registration time.
-- Client sends it on every request, typically `Authorization: Api-Key <key>` (or a custom header like `X-API-Key`).
-- Server does a DB lookup on every request to match the key to an account.
+  1. Client sends a request to a protected resource without credentials.
 
-**Correction to my original notes:** the "statefulness" downside I attributed to API keys is really more a session-auth problem. API keys are a stateless-per-request lookup (no session object being tracked) — it's just that every request costs a DB hit. Also: API keys usually identify an **application or service**, not a specific logged-in user session.
+  2. Server challenges the client with a 401 Unauthorized response containing challenge parameters.
 
-**Downsides:**
-- No built-in expiration by default (some systems add one manually).
-- If leaked, whoever has it has full access until manually revoked — no natural rotation.
-- No information encoded in the key itself (unlike JWTs) — it's just an opaque lookup token.
+     * Header: `WWW-Authenticate: Digest realm="<realm>", nonce="<server_nonce>", opaque="<opaque_value>", qop="auth"`
 
-**When to use:** server-to-server, third-party developer API access, machine clients — not for representing an individual user's browser session.
+  3. Client calculates the response digest using cryptographic hashes to protect the password in transit:
 
----
+     * A1: `username:realm:password`
+     * A2: `METHOD:URI` (e.g., `GET:/protected/resource`)
+     * Hashed A1: `H(A1)` (commonly using MD5, SHA-256, or SHA-512)
+     * Hashed A2: `H(A2)`
+     * Response Hash: `H(H(A1) : nonce : nc : cnonce : qop : H(A2))` where `nc` is the nonce count formatted as an 8-digit hexadecimal string (e.g., `00000001`), and `cnonce` is a client-generated nonce.
 
-## 4. Session-Based (Stateful) Auth
+  4. Client sends the request with the constructed response.
 
-**What happens:**
-1. User logs in with credentials.
-2. Server creates a session record (in memory, Redis, or DB) with a unique session ID.
-3. Server sends that session ID back as a cookie.
-4. On every subsequent request, the cookie is sent automatically by the browser; server looks up the session ID to know who's making the request.
-5. Sessions can have an expiration date server-side.
+     * Header: `Authorization: Digest username="testuser", realm="Restricted Area", nonce="dcd98a6af457f989b7e46189a0481d5a", uri="/protected/resource", response="9b4e07392176548567f5c14293708127", opaque="5ccc069c403ebaf946046fcd977d62e4", cnonce="e37e34b9059c216f", nc="00000001", qop="auth"`
 
-**Downside:** stateful — the server has to check a shared store (or in-memory map) on every single request to know who's asking. This doesn't horizontally scale cleanly: every server instance needs access to the same session store (hence Redis/shared DB), otherwise a user hitting a different server instance "loses" their session.
+  5. Server performs the identical calculation using its stored copy of the user's password and grants access if they match.
 
-**Good for:** traditional server-rendered web apps, low-to-moderate scale, cases where instant revocation matters (just delete the session record).
+#### 3. Session-Based (Stateful) Authentication
 
----
+* Sequence of Steps:
 
-## 5. JWT (Bearer Token) Auth
+  1. Client submits credentials via a POST request to the server's login endpoint.
 
-**What happens:**
-- Server issues a **JWT (JSON Web Token)** after login — a signed, self-contained object containing claims (user id, roles, expiry, etc.) as JSON, base64url-encoded, with a cryptographic signature.
-- Client sends it as `Authorization: Bearer <jwt>` on every request.
-- "Bearer" is a convention meaning: **whoever holds this token owns the access it grants** — no further proof of identity needed beyond having the token.
-- Server verifies the signature (using its secret or public key) on each request — no DB lookup required, since all the needed info is embedded in the token itself.
+  2. Server validates credentials, generates a unique, high-entropy session identifier, and saves this identifier in its memory or database.
 
-**Properties:**
-- Stateless — nothing to look up server-side.
-- Short-lived by convention: **15 minutes to 1 hour**.
-- Scales well — any server instance with the verification key can validate it independently, no shared session store needed.
+  3. Server returns the session identifier to the client in the HTTP response.
 
-**Structure:** `header.payload.signature` — header + payload are just base64url JSON (readable, NOT encrypted — never put secrets in a JWT payload), signature is what makes it tamper-proof.
+     * Header: `Set-Cookie: session_id=<session_id>; Secure; HttpOnly; SameSite=Strict`
+
+  4. Client's browser automatically appends the session identifier cookie to subsequent requests.
+
+     * Header: `Cookie: session_id=<session_id>`
+
+  5. Server extracts the session identifier, looks it up in its session store to verify active session state, and maps it to the associated user context to handle the request.
+
+### SECURITY CONSIDERATIONS
+
+* **Basic Authentication Vulnerability:** Base64 is purely an encoding mechanism, not encryption, meaning any entity capturing the request can decode the credentials instantly. Using Basic Authentication over an insecure HTTP channel exposes plain passwords to packet sniffing and Man-in-the-Middle (MitM) interception.
+
+* **Digest Authentication Weaknesses:** While Digest Auth prevents plaintext password transmission by hashing credentials on the client, it does not encrypt the actual HTTP payload. Consequently, the rest of the request remains exposed to tampering and MitM eavesdropping unless paired with TLS/SSL. Modern implementations should enforce SHA-256 or SHA-512 instead of MD5 to mitigate cryptographic hash collision attacks. Additionally, the server must store the cleartext passwords or pre-computed hashes of `username:realm:password`, making the credential database a highly sensitive target.
+
+* **Session Scaling Problem:** Stateful sessions scale poorly because they couple the application server to a session database or cache that must be checked for every incoming request, creating a central database bottleneck and complicating horizontal autoscaling. Cookie-based session identifiers are also subject to Cross-Site Request Forgery (CSRF) unless strict protection measures like `HttpOnly` and `SameSite` flags are implemented.
+
+### COMMON MISCONCEPTIONS
+
+* **Base64 is a security layer in Basic Authentication:** Base64 encoding is easily decoded by any standard tool and offers zero cryptographic security. It exists solely to safely package credentials into standard HTTP header characters, not to protect them.
+
+* **Digest Authentication encrypts the request:** Digest Authentication only obfuscates the password using a hashed challenge-response exchange. The actual request body, URL path, and other headers remain completely visible in plaintext. It is not a substitute for transport-layer encryption (HTTPS/TLS).
+
+* **Stateful sessions are the only way to manage auth:** Developers often assume that login states must be kept on the server. However, stateless token architectures (like JWTs) remove the server session lookup completely by encapsulating the authentication state directly inside a cryptographically signed token.
+
 
 ---
 
-## 6. Access Token + Refresh Token (Modern Pattern)
+### Stateless server 
+When applications scale horizontally across distributed servers, traditional session-based authentication creates a massive bottleneck because every server must constantly query a central database or shared cache to verify a user's logged-in status. JSON Web Tokens (JWTs) solve this scaling bottleneck by enabling stateless authentication, where the user's identity and access permissions are cryptographically signed and stored directly in a self-contained token on the client. This allows any server in a microservice network to instantly validate incoming requests in memory using cryptographic keys, entirely eliminating the need for server-side session stores or repetitive database lookups. Split access and refresh token architectures further solve the security window problem: short-lived access tokens limit the damage of token theft, while long-lived refresh tokens allow the client to silently request new access tokens without forcing the user to re-authenticate.
 
-Modern systems don't use a single long-lived token — they split responsibilities:
+### THE CORE MECHANISM
 
-**Access token:**
-- The JWT bearer token described above.
-- Short-lived (15 min–1 hr).
-- Sent on every API request.
+#### 1. The Anatomy of a Signed JWT (JWS Compact Serialization)
+A signed JSON Web Token is represented as a string consisting of three Base64url-encoded segments separated by period (`.`) characters:
 
-**Refresh token:**
-- Longer-lived (days to weeks, e.g. 7–30 days).
-- Stored in the client (commonly as an httpOnly cookie, so JS can't read it — mitigates XSS token theft).
-- When the access token expires, the client silently sends the refresh token to a dedicated endpoint (no user interaction needed).
-- Server looks the refresh token up in its DB (refresh tokens ARE tracked server-side, unlike access tokens — this is what makes them revocable).
-- If valid → server issues a **new** access token (and often a new refresh token too).
+* **Header:** A JSON object containing metadata about the cryptographic operations applied to the token.
 
-**Refresh token rotation (production detail I missed initially):**
-- Every time a refresh token is used, the old one is invalidated and a new one issued.
-- If a stolen refresh token gets replayed after the legitimate client already rotated it, the server can detect the reuse of a dead token and revoke the whole token family — limits the damage window from a stolen refresh token to a single use.
+  ```json
+  {
+    "typ": "JWT",
+    "alg": "RS256",
+    "kid": "key_2026_q3"
+  }
+  ```
 
-**Why this split exists:** short-lived access tokens limit the blast radius if one leaks (attacker only has 15–60 min of access), while refresh tokens give a good UX (no re-login every 15 minutes) without keeping a long-lived bearer token floating around in every request header.
+  * `typ`: Tells the validator that this complete object is a JWT.
+  * `alg`: The cryptographic algorithm used to sign the token (typically HS256 for symmetric or RS256 for asymmetric).
+  * `kid`: Key Identifier, used by the validator to look up the correct public key from a key set.
 
----
+* **Payload:** A JSON object containing "claims," which are statements about the user and the token's validity.
 
-## Tradeoffs Summary
+  ```json
+  {
+    "iss": "https://auth.example.com",
+    "sub": "usr_8a7b9c2d1e3f",
+    "aud": "https://api.example.com",
+    "exp": 1786311100,
+    "iat": 1786310200,
+    "jti": "9b4e0739-2176-5485-67f5-c14293708127"
+  }
+  ```
 
-| Method | Storage Requirement | Scalability | Revocation |
-|---|---|---|---|
-| Session-based | Server-side (Redis/DB) | Lower — needs shared state | Instant (delete session) |
-| API Keys | DB lookup per request | Moderate | Manual, immediate |
-| JWT | None (stateless) | High — validated locally via signature | Hard — must wait for expiry or maintain a blocklist |
+  * `iss` (Issuer): URL identifying the authentication server that generated the token.
+  * `sub` (Subject): Stable, unique identifier for the user (e.g., a UUID).
+  * `aud` (Audience): Identifier indicating which API or resource server this token is intended for.
+  * `exp` (Expiration Time): Epoch timestamp representing when the token becomes invalid.
+  * `iat` (Issued At): Epoch timestamp when the token was created.
+  * `jti` (JWT ID): A unique string identifier for the token used to detect token reuse and replay attacks.
 
-## Common mistakes
-- Assuming JWT payload is encrypted — it's not, it's just base64. Never put secrets/PII you don't want readable in there.
-- Forgetting JWTs can't be easily revoked before expiry — this is why access tokens are kept short-lived and pairing with a refresh-token DB record is what actually gives you a revocation lever.
-- Storing refresh tokens in localStorage instead of httpOnly cookies — exposes them to XSS.
+* **Signature:** Cryptographically binds the header and payload together to guarantee integrity.
 
-## Related topics
-- `oauth2-oidc` — OIDC uses ID tokens which are JWTs, and access/refresh tokens follow the same pattern described here.
+  * Symmetric (HS256): Generated using a shared secret.  
+    \(\text{Signature} = \text{HMAC-SHA256}(\text{Base64url}(\text{Header}) + "." + \text{Base64url}(\text{Payload}), \text{Shared_Secret_Key})\)
+
+  * Asymmetric (RS256): Generated using a private key and verified using a public key.  
+    \(\text{Signature} = \text{RSA-Sign}(\text{SHA-256}(\text{Base64url}(\text{Header}) + "." + \text{Base64url}(\text{Payload})), \text{Private_Key})\)
+
+#### 2. Protocol and Request/Response Flow
+
+1. **Authentication:** The client sends user credentials to the Authorization Server's `/login` endpoint.
+
+2. **Token Issuance:** The server validates credentials, generates a short-lived Access Token (e.g., 15m lifetime) and a long-lived Refresh Token (e.g., 7d lifetime) containing a unique `jti`. The server returns them in a JSON payload or places the Refresh Token in a cookie:
+
+   * Header: `Set-Cookie: refresh_token=<token_string>; Secure; HttpOnly; SameSite=Strict; Path=/refresh`
+
+3. **Authenticated Requests:** To access protected resources, the client attaches the Access Token to the standard HTTP request header:
+
+   * Header: `Authorization: Bearer <access_token>`
+
+4. **Verification:** The Resource Server intercepts the request, parses the token, cryptographically validates the signature, and rejects the request if the token has expired (`exp`) or if it targets a different audience (`aud`).
+
+5. **Refresh Token Rotation Flow:** When the Access Token expires, the client sends a POST request to `/refresh` with the Refresh Token.
+
+   * **Normal Verification:** The server extracts the Refresh Token, validates its signature, and checks its `jti` against a whitelist/blacklist store. If valid, the server marks the old `jti` as used. It then generates a brand-new Access Token and a brand-new rotated Refresh Token (with a new `jti`) and returns them to the client.
+
+   * **Reuse Detection (Replay Attempt):** If a client submits a Refresh Token whose `jti` is already marked as "used" in the database, the server MUST immediately deny the request. To mitigate an active attack, the server should invalidate the entire refresh token family (all refresh tokens descended from that original login) to instantly terminate the session.
+
+### SECURITY CONSIDERATIONS
+
+* **JWS is transparent (postcard security):** Standard signed JWTs are encoded, not encrypted. Anyone who intercepts a token can instantly decode and read the claims. Never store passwords, database keys, or sensitive personally identifiable information (PII) inside a standard JWT payload.
+
+* **The Shared Secret Bottleneck (HS256 vs. RS256):**
+
+  * With HS256, both the server that issues the token and every microservice that validates it must share the exact same secret key. This means a compromise of any single downstream service leaks the secret, allowing an attacker to forge valid tokens for any service in the entire system.
+
+  * With RS256, only the central identity server holds the private key to sign tokens. Downstream services only receive the public key (often fetched dynamically from a JWKS endpoint) to verify signatures, meaning a compromised service cannot forge new tokens.
+
+* **Algorithm Confusion / Downgrade Attack:** If your validation endpoint dynamically trusts the algorithm specified in the incoming token's header (`alg`), an attacker can extract your RS256 public key, modify the header to `"alg": "HS256"`, sign the token using your public key as the symmetric HMAC secret, and bypass signature verification. You must explicitly hardcode/pin the expected verification algorithm (e.g., enforcing `algorithms: ["RS256"]`) in your verification code.
+
+* **The "none" Algorithm:** An Unsecured JWT utilizes `"alg": "none"` and omits the signature. Your implementation must explicitly reject `"none"` headers to prevent attackers from bypassing signature validation entirely.
+
+* **Browser Storage Policies:** Storing JWTs in browser `localStorage` leaves them completely vulnerable to theft via Cross-Site Scripting (XSS) attacks. Access tokens should live in-memory, and refresh tokens should be stored in cookies configured with `Secure`, `HttpOnly`, and `SameSite=Strict` attributes to protect them from XSS and Cross-Site Request Forgery (CSRF).
+
+### COMMON MISCONCEPTIONS
+
+* **Misconception 1:** A signed JWT (JWS) hides or encrypts the user's data.  
+  * **Reality:** Signing only guarantees integrity and authenticity (preventing tampering); it does not provide confidentiality. The payload is simply base64url-encoded and is completely public to anyone who intercepts the token. Confidentiality requires JSON Web Encryption (JWE).
+
+* **Misconception 2:** You can immediately revoke a stateless JWT at any time.  
+  * **Reality:** Because the Resource Server validates the token state independently (by verifying the signature and expiration locally), an issued JWT remains cryptographically valid until its `exp` timestamp passes. Deleting it from a client application does not stop it from being accepted by APIs. Immediate revocation requires maintaining a fast-access blacklist cache (e.g., in Redis) of revoked `jti` identifiers.
+
+* **Misconception 3:** Symmetric signing (HS256) is more secure because it is faster.  
+  * **Reality:** While HMAC-SHA256 is computationally faster, RS256/ES256 is significantly more secure in distributed architectures because it operates on a model of directional trust. Asymmetric signing separates signing authority from verification authority, minimizing the risk of a global key compromise.
+
+

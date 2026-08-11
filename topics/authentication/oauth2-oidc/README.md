@@ -5,7 +5,7 @@ slug: oauth2-oidc
 status: planned
 difficulty: beginner
 related: []
-last-updated: 2026-07-27
+last-updated: 2026-07-29
 ---
 
 # OAuth 2.0 and OpenID Connect
@@ -33,3 +33,14 @@ Bullet list. Update this every time you get bitten by something.
 
 ## Resources
 See [resources.md](./resources.md).
+
+**OIDC implemented via Google** (`/topics/oidc/*`): GitHub's OAuth doesn't
+support OIDC, so this uses Google instead. The key addition over plain
+OAuth: the `openid` scope triggers Google to also return an `id_token`
+alongside the access token. The ID token is a JWT — its signature is
+verified locally against Google's public keys (fetched via `jose`'s
+`createRemoteJWKSet`, which handles key rotation automatically), and its
+`iss`/`aud` claims are checked to confirm it was issued by Google
+specifically for this app. Once verified, `sub`/`email`/`name` in the
+payload are trustworthy — that verification step is what "authentication"
+actually means in OIDC, as opposed to OAuth's "authorization" alone.

@@ -5,6 +5,7 @@ import basicAuthRoutes from './routes/basic-auth.js';
 import jwtAuthRoutes from './routes/jwt-auth.js';
 import sessionAuthRoutes from './routes/session-auth.js';
 import oauthGithubRoutes from './routes/oauth-github.js';
+import oidcGoogleRoutes from './routes/oidc-google.js';
 
 const app = Fastify({ logger: false });
 
@@ -16,6 +17,7 @@ app.register(basicAuthRoutes, { prefix: '/topics/basic-auth' });
 app.register(jwtAuthRoutes, { prefix: '/topics/jwt' });
 app.register(sessionAuthRoutes, { prefix: '/topics/session' });
 app.register(oauthGithubRoutes, { prefix: '/topics/oauth' });
+app.register(oidcGoogleRoutes, { prefix: '/topics/oidc' });
 
 const port = Number(process.env.PORT) || 4100;
 app.listen({ port }, () => {
