@@ -125,14 +125,12 @@ A signed JSON Web Token is represented as a string consisting of three Base64url
   * `iat` (Issued At): Epoch timestamp when the token was created.
   * `jti` (JWT ID): A unique string identifier for the token used to detect token reuse and replay attacks.
 
+
 * **Signature:** Cryptographically binds the header and payload together to guarantee integrity.
-
-  * Symmetric (HS256): Generated using a shared secret.  
-    \(\text{Signature} = \text{HMAC-SHA256}(\text{Base64url}(\text{Header}) + "." + \text{Base64url}(\text{Payload}), \text{Shared_Secret_Key})\)
-
-  * Asymmetric (RS256): Generated using a private key and verified using a public key.  
-    \(\text{Signature} = \text{RSA-Sign}(\text{SHA-256}(\text{Base64url}(\text{Header}) + "." + \text{Base64url}(\text{Payload})), \text{Private_Key})\)
-
+* **Symmetric (HS256):** Generated using a shared secret.
+  $$\text{Signature} = \text{HMAC-SHA256}(\text{Base64url}(\text{Header}) + "." + \text{Base64url}(\text{Payload}), \text{Shared\_Secret\_Key})$$
+* **Asymmetric (RS256):** Generated using a private key and verified using a public key.
+  $$\text{Signature} = \text{RSA-Sign}(\text{SHA-256}(\text{Base64url}(\text{Header}) + "." + \text{Base64url}(\text{Payload})), \text{Private\_Key})$$
 #### 2. Protocol and Request/Response Flow
 
 1. **Authentication:** The client sends user credentials to the Authorization Server's `/login` endpoint.
