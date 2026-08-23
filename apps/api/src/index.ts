@@ -1,11 +1,14 @@
 import 'dotenv/config';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
-import basicAuthRoutes from './routes/basic-auth.js';
-import jwtAuthRoutes from './routes/jwt-auth.js';
-import sessionAuthRoutes from './routes/session-auth.js';
-import oauthGithubRoutes from './routes/oauth-github.js';
-import oidcGoogleRoutes from './routes/oidc-google.js';
+
+import basicAuthRoutes from './routes/auth/basic-auth.js';
+import jwtAuthRoutes from './routes/auth/jwt-auth.js';
+import sessionAuthRoutes from './routes/auth/session-auth.js';
+import oauthGithubRoutes from './routes/auth/oauth-github.js';
+import oidcGoogleRoutes from './routes/auth/oidc-google.js';
+
+
 
 const app = Fastify({ logger: false });
 
