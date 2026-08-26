@@ -9,12 +9,12 @@ import oauthGithubRoutes from './routes/auth/oauth-github.js';
 import oidcGoogleRoutes from './routes/auth/oidc-google.js';
 import rbacPlugin from './plugins/rbac.js';
 
+import rateLimitPlugin from './plugins/rate-limit.js';
+import { byIp, byIpAndRoute, byUserId } from './lib/rate-limit/identifiers.js';
 
-const app = Fastify({ logger: false });
+const app = Fastify({ logger: true });
 
 app.register(cookie);
-
-app.get('/health', async () => ({ status: 'ok' }));
 
 app.register(basicAuthRoutes, { prefix: '/topics/basic-auth' });
 app.register(jwtAuthRoutes, { prefix: '/topics/jwt' });
@@ -23,6 +23,24 @@ app.register(oauthGithubRoutes, { prefix: '/topics/oauth' });
 app.register(oidcGoogleRoutes, { prefix: '/topics/oidc' });
 
 app.register(rbacPlugin);
+app.register(rateLimitPlugin);
+
+
+// Edge layer: blanket IP limit, applies to every request, fail-open
+// (an outage shouldn't take down the whole API over a rate-limit check).
+app.after(() => {
+  app.addHook('onRequest', app.rateLimit({
+    algorithm: 'token-bucket',
+    capacity: 5000,
+    refillRatePerSecond: 5000/60,
+    identifier: byIp,
+    keyPrefix: 'edge',
+    failMode: 'open',
+  }));
+
+  // /health now registered AFTER the hook exists, so it actually applies
+  app.get('/health', async () => ({ status: 'ok' }));
+});
 
 const port = Number(process.env.PORT) || 4100;
 app.listen({ port }, () => {
