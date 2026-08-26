@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { SignJWT, jwtVerify, importPKCS8, importSPKI } from 'jose';
 import { randomUUID } from 'node:crypto';
 import type { UserRole, JwtPayload } from "../../types/jwt"
+import { byIpAndRoute } from '../../lib/rate-limit/identifiers';
 
 const ALG = 'RS256';
 
@@ -59,7 +60,16 @@ export async function verifyAccessToken(token: string): Promise<JwtPayload> {
 }
 
 export default async function jwtAuthRoutes(app: FastifyInstance) {
-  app.post('/login', async (req, reply) => {
+  app.post('/login', {
+    preHandler: [app.rateLimit({
+    algorithm: 'sliding-window-log',
+    limit: 5,
+    windowMs: 60_000,
+    identifier: byIpAndRoute('login'),
+    keyPrefix: 'auth',
+    failMode: 'closed',
+  })],
+  }, async (req, reply) => {
     const { username, password } = req.body as { username: string; password: string };
     const user = USERS[username];
 
