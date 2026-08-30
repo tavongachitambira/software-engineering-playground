@@ -4,7 +4,7 @@ import {
   SLIDING_WINDOW_COUNTER_SCRIPT,
   SLIDING_WINDOW_LOG_SCRIPT,
 } from './scripts.js';
-import { redis } from '../redits.js';
+import { redis } from '../redis.js';
 
 export interface RateLimitResult {
   allowed: boolean;
