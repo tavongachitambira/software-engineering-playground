@@ -232,13 +232,13 @@ Relying on a single identifier leaves blind spots. Modern system designs use a D
 2. Auth Layer (IP + Endpoint): Limit the /login endpoint to 5 attempts per minute per IP address to stop brute-forcing.
 3. Application Layer (User/API Key): Limit authenticated users to 100 requests/minute based on their User ID or API Key, ensuring fair usage and enforcing pricing tiers.
 
-Use this interactive matrix to see which strategy fits different architectural scenarios:
+
 
 ---
 
-# Day 2: Redis Data Structures & Concurrency (Fixed Window vs. Token Bucket)
+# Redis Data Structures & Concurrency (Fixed Window vs. Token Bucket)
 
-This notes document deep-dives into Day 2 of the rate-limiting curriculum, focusing on **Redis data structures**, the naive **fixed-window counter**, and why distributed concurrency creates **atomic race conditions** that require Redis Lua scripting.
+This notes document deep-dives the rate-limiting curriculum, focusing on **Redis data structures**, the naive **fixed-window counter**, and why distributed concurrency creates **atomic race conditions** that require Redis Lua scripting.
 
 ---
 
