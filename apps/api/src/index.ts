@@ -14,6 +14,8 @@ import oauthGithubRoutes from './routes/auth/oauth-github.js';
 import oidcGoogleRoutes from './routes/auth/oidc-google.js';
 import incidentRoutes from './routes/incidents.js';
 
+import presenceRoutes from './routes/presence.js';
+
 const app = Fastify({ logger: true });
 
 // 1. Core plugins first — cookie support, then everything that adds
@@ -44,6 +46,8 @@ app.after(() => {
   app.register(oauthGithubRoutes, { prefix: '/topics/oauth' });
   app.register(oidcGoogleRoutes, { prefix: '/topics/oidc' });
   app.register(incidentRoutes, { prefix: '/topics/idempotency/incidents' });
+
+   app.register(presenceRoutes, { prefix: '/topics/redis-presence' });
 });
 
 const port = Number(process.env.PORT) || 4100;
