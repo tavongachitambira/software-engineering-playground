@@ -15,6 +15,8 @@ import oidcGoogleRoutes from './routes/auth/oidc-google.js';
 import incidentRoutes from './routes/incidents.js';
 
 import presenceRoutes from './routes/presence.js';
+import socketPlugin from './plugins/socket.js';
+import websocketDemoRoutes from './routes/websocket-demo.js';
 
 const app = Fastify({ logger: true });
 
@@ -24,6 +26,7 @@ app.register(cookie);
 app.register(rbacPlugin);
 app.register(rateLimitPlugin);
 app.register(idempotencyPlugin);
+app.register(socketPlugin);
 
 // 2. Once the above have finished loading, set up the global hook and
 // THEN register every route — routes always come last, since they're
@@ -48,6 +51,7 @@ app.after(() => {
   app.register(incidentRoutes, { prefix: '/topics/idempotency/incidents' });
 
    app.register(presenceRoutes, { prefix: '/topics/redis-presence' });
+  app.register(websocketDemoRoutes, { prefix: '/topics/websockets' });
 });
 
 const port = Number(process.env.PORT) || 4100;
