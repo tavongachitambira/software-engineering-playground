@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>websocket-fundamentals: two-tab harness</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  input, button { font: inherit; padding: 4px 8px; }
+  #log { background: #111; color: #9f9; padding: 8px; height: 280px; overflow: auto; white-space: pre-wrap; }
+  fieldset { margin-bottom: 12px; }
+</style>
+
+<h3>Two-tab test harness</h3>
+<fieldset>
+  <legend>1. Handshake</legend>
+  user <input id="user" value="alice" size="8" />
+  <button id="connect">connect</button>
+  <button id="badtoken">connect with tampered token</button>
+  <button id="notoken">connect with no token</button>
+  <button id="drop">drop transport (ungraceful)</button>
+</fieldset>
+<fieldset>
+  <legend>2. Rooms</legend>
+  incident <input id="incident" value="inc-1" size="8" />
+  <button id="join">join</button>
+  <button id="leave">leave</button>
+  <button id="send">send update</button>
+</fieldset>
+<div id="log"></div>
+
+<!-- Served by the Socket.io server itself, so no CDN and no CORS. -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const log = (...a) => {
+    $('log').textContent += a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') + '\n';
+    $('log').scrollTop = 1e9;
+  };
+  let socket;
+
+  async function connect(mode) {
+    socket?.close();
+    let token;
+    if (mode !== 'none') {
+      token = (await (await fetch('/dev-token?user=' + $('user').value)).json()).token;
+      if (mode === 'tampered') token = token.slice(0, -4) + 'AAAA'; // break the signature
+    }
+    // `auth` as a function runs on every (re)connect, so a reconnect after
+    // token expiry picks up a fresh token. A plain object would resend the stale one.
+    socket = io({
+      auth: async (cb) => {
+        cb({ token: mode === 'valid' ? (await (await fetch('/dev-token?user=' + $('user').value)).json()).token : token });
+      },
+    });
+    socket.on('connect', () => log('connected', socket.id));
+    socket.on('connect_error', (e) => log('handshake rejected:', e.message));
+    socket.on('disconnect', (r) => log('disconnected:', r));
+    socket.on('incident:updated', (p) => log('incident:updated', p));
+  }
+
+  $('connect').onclick = () => connect('valid');
+  $('badtoken').onclick = () => connect('tampered');
+  $('notoken').onclick = () => connect('none');
+  // Closes the transport without telling the server: closest browser-side stand-in for yanking the cable.
+  $('drop').onclick = () => socket?.io.engine.close();
+  $('join').onclick = () => socket.emit('incident:join', $('incident').value, (r) => log('join ack', r));
+  $('leave').onclick = () => socket.emit('incident:leave', $('incident').value);
+  $('send').onclick = () => socket.emit('incident:update', $('incident').value, { note: 'from ' + $('user').value });
+</script>
