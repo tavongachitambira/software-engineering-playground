@@ -17,6 +17,7 @@ import incidentRoutes from './routes/incidents.js';
 import presenceRoutes from './routes/presence.js';
 import socketPlugin from './plugins/socket.js';
 import websocketDemoRoutes from './routes/websocket-demo.js';
+import documentRoutes from './routes/documents.js';
 
 const app = Fastify({ logger: true });
 
@@ -52,6 +53,7 @@ app.after(() => {
 
    app.register(presenceRoutes, { prefix: '/topics/redis-presence' });
   app.register(websocketDemoRoutes, { prefix: '/topics/websockets' });
+  app.register(documentRoutes, { prefix: '/topics/optimistic-locking/documents' });
 });
 
 const port = Number(process.env.PORT) || 4100;
